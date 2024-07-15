@@ -19,13 +19,15 @@ public class Client {
     public void run(){
         try{
             while(true){
-              
+                System.out.println("WELCOME TO THE MATHEMATICS CHALLENGE AND COMPETITION SYSTEM");
                 System.out.println("menu\n\n Register  username lastname firstname emailAddress date_of_birth  school_registration_number image _file.png\n\n viewChallenges -displays the challenges \n\n attempt challenge challenge number \n\n view applicants\n\n confirm yes/no username\n log in");
-                System.out.println("enter command of your choice from the menu");
-                System.out.println(">>>");
+                System.out.println("enter command of your choice from the menu\n >>>>");
+                
                 //clearing the spaces in the user input
                 String command = B.readLine().trim();
-                //
+                
+                P.println(command);
+                
                 if (command.equalsIgnoreCase("exit")) {
                     break;
                 }
@@ -162,10 +164,19 @@ public class Client {
         System.out.println(response);
      }
 
-    public String sendMessage(String msg) throws IOException {
+     public String sendMessage(String msg) throws IOException {
         P.println(msg);
-        return Br.readLine();
+        StringBuilder responseBuilder = new StringBuilder();
+        String line;
+        while ((line = Br.readLine()) != null) {
+            if (line.isEmpty()) {
+                break;
+            }
+            responseBuilder.append(line).append("\n");
         }
+        return responseBuilder.toString();
+    }
+    
     public void stopConnection() throws IOException {
         P.close();
         B.close();
