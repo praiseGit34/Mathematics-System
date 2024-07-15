@@ -70,17 +70,20 @@ public class Server {
     private final Connection con;
     private PrintWriter out;
     private BufferedReader reader;
-       
+    
+    //Constructor for initializing ClientHandler with socket and database connection
     ClientHandler(Socket soc, Connection con) {
        this.soc=soc;
        this.con=con;
 
     }
-    
+
+    // Run method that will be executed when thread starts
     public void run(){
         try{
         out = new PrintWriter(soc.getOutputStream(), true);
         reader= new BufferedReader(new InputStreamReader(soc.getInputStream()));
+
         String inputLine;
         while ((inputLine = reader.readLine()) != null) {
             System.out.println("Received from client: " + inputLine);
@@ -93,15 +96,18 @@ public class Server {
         e.printStackTrace();
     }
     }
-    private String processRequest(String request) throws SQLException {
-        String[] part = request.split(" ");
-        String action = part[0].toUpperCase();
-        if(action.startsWith("register")){
 
-            return registerUser(part);
+    // Method to process client's request and return appropriate response
+    private String processRequest(String request) throws SQLException {
+        String[] part = request.split(" ");// Split the request into parts based on space delimiter
+        String action = part[0].toUpperCase();
+
+        // Check the action and execute corresponding logic
+        if(action.startsWith("register")){
+         return registerUser(part);// Call registerUser method and return its result
         }else if(action.startsWith("login")){
             if (part.length == 3) {
-                return loginUser(part[1], part[2]);
+                return loginUser(part[1], part[2]);// Call loginUser method with username and password, return result
             } else if (part.length == 2 && part[1].contains("@")) {
                 return getRepresentativePassword(part[1]);
             } else {
@@ -133,7 +139,7 @@ public class Server {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'getRepresentativePassword'");
     }
-    //handling the registration command
+    //method to handle the registration command
     private String registerUser(String[] part) throws SQLException {
        
         String dateOfBirth = part[4].trim();
@@ -191,8 +197,7 @@ public class Server {
         }
     }
 
-    
-    //log in logic
+    // Method to handle user login
     private static String loginUser(String username, String password) {
         try {
             String query = "SELECT * FROM users WHERE userName = ? AND password = ?";
@@ -211,8 +216,7 @@ public class Server {
         }
      }  
 
-
-     //log out logic
+      // Method to handle user logout
     private static String logoutUser() {
         if (isAuthenticated()) {
             participantID = 0;
@@ -391,8 +395,7 @@ public class Server {
             }
             
 
-    private static String viewChallenges() {
-        
+        private static String viewChallenges() {
             try {
                 StringBuilder sb = new StringBuilder();
                 String query = "SELECT * FROM challenges WHERE challenge_status = 'OPEN'";
@@ -419,9 +422,7 @@ public class Server {
             }
         }
         
-       
-
-    // processing view applicants command
+     // Method to handle viewing applicants
     private static String viewApplicants() {
     try {
         StringBuilder sb = new StringBuilder();
@@ -445,8 +446,11 @@ public class Server {
         return "Error in viewing applicants.";
     }
 }
-private static String attemptChallenge(String challengeNumber ) {
-    if (!isAuthenticated() || isSchoolRepresentative) {
+
+    // Method to handle attempting a challenge
+    private static String attemptChallenge(String challengeNumber ) {
+    // Check if the participant is authenticated and not a school representative
+     if (!isAuthenticated() || isSchoolRepresentative) {
            return "You must be logged in as a participant to attempt a challenge.";
        }
        try {
@@ -468,24 +472,23 @@ private static String attemptChallenge(String challengeNumber ) {
                LocalTime attemptDuration = LocalTime.parse(attemptDurationStr, DateTimeFormatter.ofPattern("HH:mm:ss"));
                long durationInSeconds = attemptDuration.toSecondOfDay();
    
-               // Check number of attempts
+               // Check if the participant has already exceeded maximum attempts
                if (hasExceededAttempts(challengeNo)) {
                    return "You have already attempted this challenge 3 times.";
                }
                
+               // Fetch random questions for the challenge from database
                List<Map<String, Object>> questions = fetchRandomQuestions(challengeNo);
-               
                String description = String.format("Challenge: %s\nDuration: %s",
-                       challengeName, attemptDuration.toString());
-               
+               challengeName, attemptDuration.toString());
                out.println(description);
                out.flush();
                
+               // Wait for participant to confirm starting the challenge
                String startResponse = reader.readLine();
                if (!startResponse.equalsIgnoreCase("start")) {
                    return "Challenge cancelled.";
                }
-               
                int attemptID = storeAttempt(challengeNo);
                return conductChallenge(questions, durationInSeconds, attemptID);
            }
@@ -495,58 +498,58 @@ private static String attemptChallenge(String challengeNumber ) {
            return "Error during challenge attempt: " + e.getMessage();
        }
    }
+
+   // Method to conduct the challenge
     private static String conductChallenge(List<Map<String, Object>> questions, long durationInSeconds, int attemptID) {
        
             try {
                 int totalQuestions = questions.size();
-                int totalMarks = 0;
+                int remainingQuestions = totalQuestions;
+                int score = 0;
                 long startTime = System.currentTimeMillis();
-                
-                for (int i = 0; i < totalQuestions; i++) {
-                    Map<String, Object> question = questions.get(i);
-                    int questionNo = (int) question.get("questionNo");
+                // Iterate through each question
+                for (Map<String, Object> question : questions) {
                     String questionText = (String) question.get("question");
-                    String correctAnswer = (String) question.get("answer");
-                    int marksAwarded = (int) question.get("marks");
-        
-                    out.println("Question " + (i + 1) + ": " + questionText);
-                    out.println("Time remaining: " + (durationInSeconds - (System.currentTimeMillis() - startTime) / 1000) + " seconds");
-        
-                    String participantAnswer = reader.readLine().trim();
-        
-                    if (participantAnswer.equalsIgnoreCase(correctAnswer)) {
-                        totalMarks += marksAwarded;
-                    } else if (participantAnswer.equals("-")) {
-                        // Participant chose not to answer
-                        totalMarks += 0; // No marks awarded
-                    } else {
-                        // Participant gave a wrong answer
-                        totalMarks -= 3; // Deduct 3 marks for wrong answer
-                    }
-                }
-        
-                long endTime = System.currentTimeMillis();
-                long timeTakenInSeconds = (endTime - startTime) / 1000;
-        
-                // Store attempt results in the database (score, time taken, etc.)
-                String updateSql = "UPDATE ChallengeAttempt SET totalMarks = ?, attemptEndTime = NOW(), timeTaken = ? WHERE attemptID = ?";
-                PreparedStatement ps = con.prepareStatement(updateSql);
-                ps.setInt(1, totalMarks);
-                ps.setLong(2, timeTakenInSeconds);
-                ps.setInt(3, attemptID);
-                ps.executeUpdate();
-        
-                // Generate and send PDF report to participant (implement this)
-        
-                return "Challenge completed.\nTotal marks: " + totalMarks + "\nTime taken: " + timeTakenInSeconds + " seconds";
-            } catch (SQLException | IOException e) {
-                e.printStackTrace();
-                return "Error during challenge: " + e.getMessage();
+                    String answer = (String) question.get("answer");
+                    int marks = (int) question.get("marks");
+                 // Display question information to the participant
+                out.println(String.format("Remaining questions: %d\nTime remaining: %d seconds\n%s"+remainingQuestions, durationInSeconds, questionText));
+                String participantAnswer;
+        // Calculate score based on the answer
+        if (participantAnswer.equalsIgnoreCase(answer)) {
+            score += marks;
+        } else if (participantAnswer.equals("-")) {
+            score += 0; // No marks awarded if participant is unsure
+        } else {
+            score -= 3; // Deduct 3 marks for wrong answer
+        }
+
+        remainingQuestions--;
+
+        // Check if time is up
+        long currentTime = System.currentTimeMillis();
+        long elapsedTime = (currentTime - startTime) / 1000;
+        if (elapsedTime >= durationInSeconds) {
+            break; // End challenge if time limit exceeded
+        }
+    }                
+    // Store attempt results in the database (score, time taken, etc.)
+            String updateSql = "UPDATE ChallengeAttempt SET totalMarks = ?, attemptEndTime = NOW(), timeTaken = ? WHERE attemptID = ?";
+            PreparedStatement ps = con.prepareStatement(updateSql);
+            String totalMarks;
+            ps.setInt(1, totalMarks);
+            String timeTakenInSeconds;
+            ps.setLong(2, timeTakenInSeconds);
+            ps.setInt(3, attemptID);
+            ps.executeUpdate();
+    // Generate and send PDF report to participant (implement this)
+    return "Challenge completed.\nTotal marks: " + totalMarks + "\nTime taken: " + timeTakenInSeconds + " seconds";
+        } catch (SQLException | IOException e) {
+            e.printStackTrace();
+            return "Error during challenge: " + e.getMessage();
             }
         }
         
-    
-
     private static int storeAttempt(int challengeNo) {
         try {
             String insertSql = "INSERT INTO ChallengeAttempt (challengeNo, participantID, attemptStartTime) VALUES (?, ?, NOW())";
