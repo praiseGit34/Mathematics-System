@@ -133,7 +133,7 @@ public class Client {
         }
         }
 
-    //log out method
+    //log out method 
     private void logout() throws IOException {
         String response = sendMessage("LOGOUT");
         System.out.println(response);

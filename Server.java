@@ -1,15 +1,40 @@
 import java.io.*;
 import java.net.*;
 import java.sql.*;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+
+import javax.mail.internet.InternetAddress;
+import javax.mail.internet.MimeMessage;
+import javax.mail.*;
+import javax.mail.PasswordAuthentication;
+import javax.mail.internet.*;
+
+
+import com.mysql.cj.Session;
 public class Server {
     public ServerSocket ss;
-    public Connection con;
+    public static Connection con;
     public Socket soc;
+    private static PrintWriter out;
+    private static String school_Registration_Number;
+    private static String currentSchoolRepresentativePassword;
+    private static String currentSchoolRepresentativeEmail;
+    private static boolean isSchoolRepresentative;
+    private static int participantID;
+    private static String schoolRegNo;
+    private static BufferedReader reader;
     
     public Server(int port) throws IOException, SQLException, ClassNotFoundException{
         ss=new ServerSocket(port);
         Class.forName("com.mysql.cj.jdbc.Driver");
         System.out.println("Server has connected to the database.");
+        //connecting to the challenge database
         con=DriverManager.getConnection("jdbc:mysql://localhost:3306/challenge","root","");
     }
 
@@ -17,7 +42,9 @@ public class Server {
         System.out.println("\tMathematics Challenge System. waiting for the client.....");
         while (true) {
                     try {
-                    Socket soc = ss.accept(); // Wait for a client to connect
+                    //accepting request from the client
+                    Socket soc = ss.accept(); 
+                    // Wait for a client to connect
                     System.out.println("Client connected: " +soc );
                     new ClientHandler(soc, con).start(); 
                    
@@ -42,9 +69,8 @@ public class Server {
     private final Connection con;
     private PrintWriter out;
     private BufferedReader reader;
-    private 
-    
-     ClientHandler(Socket soc, Connection con) {
+       
+    ClientHandler(Socket soc, Connection con) {
        this.soc=soc;
        this.con=con;
 
@@ -60,11 +86,11 @@ public class Server {
             out.flush();
             
         }
-    }catch(IOException e){
+    }catch(IOException | SQLException e){
         e.printStackTrace();
     }
     }
-    private String processRequest(String request) {
+    private String processRequest(String request) throws SQLException {
         String[] part = request.split(" ");
         String action = part[0].toUpperCase();
         if(action.startsWith("register")){
@@ -96,14 +122,76 @@ public class Server {
 
             
     }
-
-    private String confirmApplicant(String string, String string2) {
+    
+  
+   
+    private String getRepresentativePassword(String string) {
         // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'confirmApplicant'");
+        throw new UnsupportedOperationException("Unimplemented method 'getRepresentativePassword'");
     }
-    private String loginUser(String username, String password) {
+    //handling the registration command
+    private String registerUser(String[] part) throws SQLException {
+       
+        String dateOfBirth = part[4].trim();
+        // validate date format yyyy-mm-dd 
+        if (!dateOfBirth.matches("\\d{4}/\\d{2}/\\d{2}")) {
+        System.out.println("Invalid date format.");
+        }
+        //replace a hash with a hyphen
+        dateOfBirth = dateOfBirth.replace('/', '-');
+        //check if the school registration number exists
+        String checkQuery = "SELECT * FROM schools WHERE schoolregistrationumber = ?";
+        PreparedStatement st = con.prepareStatement(checkQuery);
+        st.setString(1, part[5].trim());
+        ResultSet rs = st.executeQuery();
+    
+        if (!rs.next()) {
+            
+        return "School registration number not found";
+        }
+        if (part.length != 8) {
+            sendMessage("Invalid registration format. Use: Register username firstname lastname emailAddress date_of_birth school_registration_number image_file.png");
+            return "register correctly";
+        }
+    
+        //insert registration data into MySQL database
+        String query = "INSERT INTO users (userName, firstname, lastname, emailAddress, dateOfBirth, school_reg_number, image_file) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        PreparedStatement stmt = con.prepareStatement(query);
+        stmt.setString(1, part[1].trim());
+        stmt.setString(2, part[2].trim());
+        stmt.setString(3, part[3].trim());
+        stmt.setString(4, part[4].trim());
+        stmt.setString(5, part[5].trim());
+        stmt.setString(6, part[6].trim());
+        stmt.setString(7, part[7].trim());
+        int rowsAffected = stmt.executeUpdate();
+
+        //writing the registration information for participants whose registration number exist in the database 
+        try (FileWriter writer = new FileWriter("registered_participants.txt", true)) {
+            writer.write(query + "\n");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    
+        if (rowsAffected > 0) {
+            sendMessage("Registration successful for " + part[1]);
+        } else {
+            sendMessage("Registration failed.");
+        }
+        return query;
+        }
+
+        //sending response to the client
+        private void sendMessage(String message) {
+          out.println(message);
+        }
+    }
+
+    
+    //log in logic
+    private static String loginUser(String username, String password) {
         try {
-            String query = "SELECT * FROM users WHERE username = ? AND password = ?";
+            String query = "SELECT * FROM users WHERE userName = ? AND password = ?";
             PreparedStatement stmt = con.prepareStatement(query);
             stmt.setString(1, username);
             stmt.setString(2, password);
@@ -120,7 +208,217 @@ public class Server {
      }  
 
 
-    private String viewApplicants() {
+     //log out logic
+    private static String logoutUser() {
+        if (isAuthenticated()) {
+            participantID = 0;
+            isSchoolRepresentative = false;
+            schoolRegNo = null;
+            currentSchoolRepresentativeEmail = null;
+            currentSchoolRepresentativePassword = null;
+            return "Logged out successfully.";
+        } else {
+            return "No user is currently logged in.";
+        }
+    }
+
+    
+    private static boolean isAuthenticated() {
+        return participantID != 0 || (isSchoolRepresentative && schoolRegNo != null);
+    }
+
+    
+    //confirm applicant logic
+    private static String confirmApplicant(String decision, String username) {
+        
+        if (!isSchoolRepresentative) {
+            return "You don't have permission to confirm applicants.";
+        }
+    
+        
+        boolean isApproved = decision.equalsIgnoreCase("yes");
+        String targetTable = isApproved ? "Participant" : "Rejected";
+    
+        try {
+            con.setAutoCommit(false);//disabling
+    
+            // Get applicant details
+            String selectSql = "SELECT * FROM Applicant WHERE userName = ? AND school_Registration_Number = ?";
+            try (PreparedStatement selectStmt = con.prepareStatement(selectSql)) {
+                selectStmt.setString(1, username);
+                
+                selectStmt.setString(2, school_Registration_Number);
+                ResultSet rs = selectStmt.executeQuery();
+    
+                if (!rs.next()) {
+                    con.rollback();
+                    return "No applicant found with username: " + username;
+                }
+    
+                int applicantID = rs.getInt("applicantID");
+    
+                // Insert into target table
+                String query;
+                if (isApproved) {
+                    query = "INSERT INTO Participant (applicantID, firstName, lastName, emailAddress, dateOfBirth, school_Registration_NUmber, userName, imagePath, password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                } else {
+                    query = "INSERT INTO Rejected (firstName, lastName, emailAddress, dateOfBirth, school_Registration_Number, userName, imagePath, password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                }
+    
+                try (PreparedStatement insertStmt = con.prepareStatement(query)) {
+                    if (isApproved) {
+                        insertStmt.setInt(1, applicantID);
+                        insertStmt.setString(2, rs.getString("firstName"));
+                        insertStmt.setString(3, rs.getString("lastName"));
+                        insertStmt.setString(4, rs.getString("emailAddress"));
+                        insertStmt.setDate(5, rs.getDate("dateOfBirth"));
+                        insertStmt.setInt(6, rs.getInt("school_Registration_Number"));
+                        insertStmt.setString(7, rs.getString("userName"));
+                        insertStmt.setString(8, rs.getString("imagePath"));
+                        insertStmt.setString(9, rs.getString("password"));
+                    } else {
+                        insertStmt.setInt(1, applicantID);
+                        insertStmt.setString(2, rs.getString("firstName"));
+                        insertStmt.setString(3, rs.getString("lastName"));
+                        insertStmt.setString(4, rs.getString("emailAddress"));
+                        insertStmt.setDate(5, rs.getDate("dateOfBirth"));
+                        insertStmt.setInt(6, rs.getInt("school_Registration_Number"));
+                        insertStmt.setString(7, rs.getString("userName"));
+                        insertStmt.setString(8, rs.getString("imagePath"));
+                        insertStmt.setString(9, rs.getString("password"));
+                    }
+    
+                    insertStmt.executeUpdate();
+                }
+    
+                // Delete from Applicant table
+                String deleteSql = "DELETE FROM Applicant WHERE applicantID = ?";
+                try (PreparedStatement deleteStmt = con.prepareStatement(deleteSql)) {
+                    deleteStmt.setInt(1, applicantID);
+                    deleteStmt.executeUpdate();
+                }
+    
+                con.commit();
+    
+                // Send email notification (implement this method separately)
+                sendEmailNotification(rs.getString("emailAddress"), isApproved);
+    
+                return "Applicant " + username + " has been " + (isApproved ? "accepted" : "rejected") + ".";
+            }
+        } catch (SQLException e) {
+            try {
+                con.rollback();
+            } catch (SQLException rollbackEx) {
+                rollbackEx.printStackTrace();
+            }
+            e.printStackTrace();
+            return "Error confirming applicant: " + e.getMessage();
+        } finally {
+            try {
+                con.setAutoCommit(true);
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+
+    //send email notification  logic
+    private static void sendEmailNotification(String username, boolean isConfirmed) {
+        String host = "smtp.gmail.com";
+            final String email = "praiseasiimire38@gmail.com";
+            final String password = "xoyngpbxudrzespd";
+
+        Properties props = new Properties();
+        props.put("mail.smtp.auth", "true");//Stmp authentication
+        props.put("mail.smtp.starttls.enable", "true");//enable the encryption
+        props.put("mail.smtp.host", host);//sets the server 
+        props.put("mail.smtp.port", "587");//enables/sets the stmp server port
+
+        javax.mail.Session session = Session.getInstance(props, new javax.mail.Authenticator() {
+            protected PasswordAuthentication getPasswordAuthentication() {
+                return new PasswordAuthentication(email, password);
+            }
+        });
+
+        try {
+            Message message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(email));
+            // Fetch the representative's email from the database
+           String representativeEmail = getRepresentativeEmail(username);
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse("mepraise2003@gmail.com"));
+            
+            if (isConfirmed) {
+                message.setSubject("Participant Confirmation");
+                message.setText("Dear Representative,\n\nApplicant with username: " + username + " has been registered.Please preview and confirm");
+            }else{
+            message.setSubject("Application Rejection");
+            message.setText("Dear Representative,\n\nApplicant with username: " + username + " has been rejected.");
+       
+            }
+            Transport.send(message);
+            System.out.println("confirmation email sent successfully");
+            
+            }catch (MessagingException e) {
+            throw new RuntimeException(e);
+        
+            }}
+            
+
+            //fetching the representative email from the schools table
+        private static String getRepresentativeEmail(String username) {
+            try {
+                String query = "SELECT representative_email FROM schools WHERE schoolregistrationumber = " +
+                                   "(SELECT school_registration_number FROM users WHERE userName = ?)";
+                PreparedStatement stmt = con.prepareStatement(query);
+                stmt.setString(1, username);
+                ResultSet rs = stmt.executeQuery();
+                    
+                if (rs.next()) {
+                    String representativeEmail = rs.getString("representative_email");
+                    return representativeEmail;
+                    } else {
+                        return "Representative email not found for user: " + username;
+                    }
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                    return "Error fetching representative email.";
+                }
+            }
+            
+
+    private static String viewChallenges() {
+        
+            try {
+                StringBuilder sb = new StringBuilder();
+                String query = "SELECT * FROM challenges WHERE challenge_status = 'OPEN'";
+                PreparedStatement st = con.prepareStatement(query);
+                ResultSet rs = st.executeQuery();
+        
+                while (rs.next()) {
+                    int challengeNumber = rs.getInt("challenge_number");
+                    String challengeName = rs.getString("challenge_name");
+                    Date startDate = rs.getDate("start_date");
+                    Date endDate = rs.getDate("end_date");
+                    sb.append("Challenge ").append(challengeNumber).append(": ").append(challengeName)
+                      .append(", Start Date: ").append(startDate).append(", End Date: ").append(endDate).append("\n");
+                }
+        
+                if (sb.length() == 0) {
+                    return "No challenges currently open.";
+                } else {
+                    return sb.toString();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+                return "Error retrieving challenges.";
+            }
+        }
+        
+       
+
+    // processing view applicants command
+    private static String viewApplicants() {
     try {
         StringBuilder sb = new StringBuilder();
         String query = "SELECT * FROM applicants";
@@ -143,55 +441,171 @@ public class Server {
         return "Error in viewing applicants.";
     }
 }
-
-
-
-
-    private String registerUser(String[] part) throws SQLException {
-       
-    String dateOfBirth = part[4].trim();
-    // validate date format yyyy-mm-dd 
-    if (!dateOfBirth.matches("\\d{4}/\\d{2}/\\d{2}")) {
-    System.out.println("Invalid date format.");
-    }
-    //replace a hash with a hyphen
-    dateOfBirth = dateOfBirth.replace('/', '-'); // Converting to SQL date format
-    String checkQuery = "SELECT * FROM schools WHERE schoolregistrationumber = ?";
-    PreparedStatement checkSt = con.prepareStatement(checkQuery);
-    checkSt.setString(1, part[5].trim());
-    ResultSet rs = checkSt.executeQuery();
-
-    if (!rs.next()) {
-    return "School registration number not found";
-    }
-    if (part.length != 8) {
-        sendMessage("Invalid registration format. Use: Register username firstname lastname emailAddress date_of_birth school_registration_number image_file.png");
-        return "register correctly";
-    }
-
-    // Example: Insert registration data into MySQL database
-    String query = "INSERT INTO users (username, firstname, lastname, emailAddress, dateOfBirth, school_reg_number, image_file) VALUES (?, ?, ?, ?, ?, ?, ?)";
-    PreparedStatement stmt = con.prepareStatement(query);
-    stmt.setString(1, part[1]);
-    stmt.setString(2, part[2]);
-    stmt.setString(3, part[3]);
-    stmt.setString(4, part[4]);
-    stmt.setString(5, part[5]);
-    stmt.setString(6, part[6]);
-    stmt.setString(7, part[7]);
-    int rowsAffected = stmt.executeUpdate();
-
-    if (rowsAffected > 0) {
-        sendMessage("Registration successful for " + part[1]);
-    } else {
-        sendMessage("Registration failed.");
-    }
-    return query;
-
+private static String attemptChallenge(String challengeNumber ) {
+    if (!isAuthenticated() || isSchoolRepresentative) {
+           return "You must be logged in as a participant to attempt a challenge.";
+       }
+       try {
+           int challengeNo = Integer.parseInt(challengeNumber);
+           
+           // Fetch challenge details
+           String checkOpenChallenge = "SELECT * FROM Challenge WHERE challengeNo = ? AND openDate <= CURDATE() AND closeDate >= CURDATE()";
+           try (PreparedStatement ps = con.prepareStatement(checkOpenChallenge)) {
+               ps.setInt(1, challengeNo);
+               ResultSet rs = ps.executeQuery();
+               if (!rs.next()) {
+                   return "Challenge is not open or does not exist.";
+               }
+               
+               String challengeName = rs.getString("challengeName");
+               String attemptDurationStr = rs.getString("attemptDuration");
+               int totalQuestions = rs.getInt("noOfQuestions");
+               
+               LocalTime attemptDuration = LocalTime.parse(attemptDurationStr, DateTimeFormatter.ofPattern("HH:mm:ss"));
+               long durationInSeconds = attemptDuration.toSecondOfDay();
    
-    }
-    private void sendMessage(String message) {
-      out.println(message);
-    }
-}}
+               // Check number of attempts
+               if (hasExceededAttempts(challengeNo)) {
+                   return "You have already attempted this challenge 3 times.";
+               }
+               
+               List<Map<String, Object>> questions = fetchRandomQuestions(challengeNo);
+               
+               String description = String.format("Challenge: %s\nDuration: %s",
+                       challengeName, attemptDuration.toString());
+               
+               out.println(description);
+               out.flush();
+               
+               String startResponse = reader.readLine();
+               if (!startResponse.equalsIgnoreCase("start")) {
+                   return "Challenge cancelled.";
+               }
+               
+               int attemptID = storeAttempt(challengeNo);
+               return conductChallenge(questions, durationInSeconds, attemptID);
+           }
+       } catch (SQLException | IOException e) {
+           System.err.println("Error during challenge attempt: " + e.getMessage());
+           e.printStackTrace();
+           return "Error during challenge attempt: " + e.getMessage();
+       }
+   }
+    private static String conductChallenge(List<Map<String, Object>> questions, long durationInSeconds, int attemptID) {
+       
+            try {
+                int totalQuestions = questions.size();
+                int totalMarks = 0;
+                long startTime = System.currentTimeMillis();
+                
+                for (int i = 0; i < totalQuestions; i++) {
+                    Map<String, Object> question = questions.get(i);
+                    int questionNo = (int) question.get("questionNo");
+                    String questionText = (String) question.get("question");
+                    String correctAnswer = (String) question.get("answer");
+                    int marksAwarded = (int) question.get("marks");
+        
+                    out.println("Question " + (i + 1) + ": " + questionText);
+                    out.println("Time remaining: " + (durationInSeconds - (System.currentTimeMillis() - startTime) / 1000) + " seconds");
+        
+                    String participantAnswer = reader.readLine().trim();
+        
+                    if (participantAnswer.equalsIgnoreCase(correctAnswer)) {
+                        totalMarks += marksAwarded;
+                    } else if (participantAnswer.equals("-")) {
+                        // Participant chose not to answer
+                        totalMarks += 0; // No marks awarded
+                    } else {
+                        // Participant gave a wrong answer
+                        totalMarks -= 3; // Deduct 3 marks for wrong answer
+                    }
+                }
+        
+                long endTime = System.currentTimeMillis();
+                long timeTakenInSeconds = (endTime - startTime) / 1000;
+        
+                // Store attempt results in the database (score, time taken, etc.)
+                String updateSql = "UPDATE ChallengeAttempt SET totalMarks = ?, attemptEndTime = NOW(), timeTaken = ? WHERE attemptID = ?";
+                PreparedStatement ps = con.prepareStatement(updateSql);
+                ps.setInt(1, totalMarks);
+                ps.setLong(2, timeTakenInSeconds);
+                ps.setInt(3, attemptID);
+                ps.executeUpdate();
+        
+                // Generate and send PDF report to participant (implement this)
+        
+                return "Challenge completed.\nTotal marks: " + totalMarks + "\nTime taken: " + timeTakenInSeconds + " seconds";
+            } catch (SQLException | IOException e) {
+                e.printStackTrace();
+                return "Error during challenge: " + e.getMessage();
+            }
+        }
+        
     
+
+    private static int storeAttempt(int challengeNo) {
+        try {
+            String insertSql = "INSERT INTO ChallengeAttempt (challengeNo, participantID, attemptStartTime) VALUES (?, ?, NOW())";
+            PreparedStatement ps = con.prepareStatement(insertSql, Statement.RETURN_GENERATED_KEYS);
+            ps.setInt(1, challengeNo);
+            ps.setInt(2, participantID); 
+            ps.executeUpdate();
+    
+            ResultSet rs = ps.getGeneratedKeys();
+            if (rs.next()) {
+                // Returns the attemptID
+                return rs.getInt(1); 
+            } else {
+                return -1; // Error in getting the generated key
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return -1; // Error occurred
+        }
+    }
+    
+
+    private static List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws SQLException {
+    String questionSql = "SELECT q.questionNo, q.question, a.answer, a.marksAwarded " +
+                         "FROM Question q JOIN Answer a ON q.questionNo = a.questionNo " +
+                         "WHERE q.questionBankID = (SELECT questionBankID FROM Challenge WHERE challengeNo = ?) " +
+                         "ORDER BY RAND() LIMIT 10";
+    List<Map<String, Object>> questions = new ArrayList<>();
+    try (PreparedStatement questionStmt = con.prepareStatement(questionSql)) {
+        questionStmt.setInt(1, challengeNo);
+        ResultSet questionRs = questionStmt.executeQuery();
+        while (questionRs.next()) {
+            Map<String, Object> question = new HashMap<>();
+            question.put("questionNo", questionRs.getInt("questionNo"));
+            question.put("question", questionRs.getString("question"));
+            question.put("answer", questionRs.getString("answer"));
+            question.put("marks", questionRs.getInt("marksAwarded"));
+            questions.add(question);
+        }
+    }
+    return questions; 
+}
+
+
+private static boolean hasExceededAttempts(int challengeNo) {
+    try {
+        String query = "SELECT COUNT(*) AS attempts FROM ChallengeAttempt WHERE challengeNo = ? AND participantID = ?";
+        PreparedStatement ps = con.prepareStatement(query);
+        ps.setInt(1, challengeNo);
+        ps.setInt(2, participantID);
+        ResultSet rs = ps.executeQuery();
+        
+        if (rs.next()) {
+            int attempts = rs.getInt("attempts");
+            return attempts >= 3; // Return true if attempts are equal or more than 3
+        } else {
+            return false; // No attempts found
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+        return false; // Error occurred
+    }
+}
+
+}
+  
