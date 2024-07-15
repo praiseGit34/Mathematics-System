@@ -50,25 +50,38 @@ public class Client {
         if (part.length != 8) {
             System.out.println("Invalid registration format. Use: Register username firstname lastname emailAddress date_of_birth school_registration_number image_file.png");
         } else {
+            String response = sendMessage(command);
+            System.out.println(response); 
              register(part);
+
         }
        
     }else if(command.startsWith("login")){
         if (part.length == 3) {
             login(part[1], part[2]);
+            String response = sendMessage(command);
+            System.out.println(response);
         } else if (part.length == 2 && part[1].contains("@")) {
             loginSchoolRepresentative(part[1]);
+            String response = sendMessage(command);
+            System.out.println(response);
         } else
             System.out.println("Invalid login format. Use: login username password (for regular users) or login email@school.com (for school representatives)");
             logout();
     }else if(command.startsWith("view challenges")){
             viewChallenges();
+            String response = sendMessage(command);
+            System.out.println(response);
     }else if(command.startsWith("attemptChallenges")){
+        String response = sendMessage(command);
+        System.out.println(response);
         attemptChallenges(part[1]);
     }else if(command.startsWith("confirm")){
         if (part.length != 3 || (!part[1].equals("yes") && !part[1].equals("no"))) {
             System.out.println("Invalid format. Use: confirm yes/no username");
         } else {
+            String response = sendMessage(command);
+            System.out.println(response);
             confirmApplicant(part[1], part[2]);
         }
      }else if(command.startsWith("view applicants")){
@@ -92,38 +105,39 @@ public class Client {
     private void attemptChallenges(String challengeNumber) throws IOException {
         String response = sendMessage("ATTEMPT_CHALLENGE " + challengeNumber);
         System.out.println(response);
-        String prompt= Br.readLine();
+    
+        String prompt = Br.readLine();
         System.out.println(prompt);
-
+    
         System.out.println("Press Enter to start the challenge...");
         B.readLine();
         P.println("start");
         P.flush();
-
+    
         while (true) {
             String line = Br.readLine();
             if (line == null || line.equals("END_OF_CHALLENGE")) {
                 break;
             }
             System.out.println(line);
-
+    
             if (line.startsWith("Enter your answer")) {
                 System.out.print("Your answer: ");
                 String answer = B.readLine();
                 P.println(answer);
                 P.flush();
             }
-
+    
             if (line.equals("oh sorry!,time is done")) {
                 System.out.println("Challenge ended due to time");
                 break;
             }
         }
+    
+        String result = Br.readLine();
+        System.out.println(result);
+    }
 
-        String Result = Br.readLine();
-        System.out.println(Result);
-   
-    } 
     //retrieves challenges from the server
     private void viewChallenges() throws IOException {
         String response = sendMessage("VIEW_CHALLENGES");
