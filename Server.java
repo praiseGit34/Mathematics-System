@@ -48,6 +48,7 @@ public class Server {
                     System.out.println("Client connected: " +soc );
                     new ClientHandler(soc, con).start(); 
                    
+                   
                 
             } catch (IOException e) {
                 e.printStackTrace();
@@ -75,17 +76,19 @@ public class Server {
        this.con=con;
 
     }
+    
     public void run(){
         try{
         out = new PrintWriter(soc.getOutputStream(), true);
         reader= new BufferedReader(new InputStreamReader(soc.getInputStream()));
         String inputLine;
         while ((inputLine = reader.readLine()) != null) {
+            System.out.println("Received from client: " + inputLine);
             String response = processRequest(inputLine);
             out.println(response);
             out.flush();
-            
         }
+        
     }catch(IOException | SQLException e){
         e.printStackTrace();
     }
@@ -94,6 +97,7 @@ public class Server {
         String[] part = request.split(" ");
         String action = part[0].toUpperCase();
         if(action.startsWith("register")){
+
             return registerUser(part);
         }else if(action.startsWith("login")){
             if (part.length == 3) {
