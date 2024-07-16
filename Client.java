@@ -14,17 +14,16 @@ public class Client {
          P=new PrintWriter(soc.getOutputStream() ,true); //sends to the server
          Br=new BufferedReader(new InputStreamReader(soc.getInputStream())); //reads responses from the socket
     }
-
     //run method will trigger the user to enter a command
     public void run(){
         try{
             while(true){
                 System.out.println("WELCOME TO THE MATHEMATICS CHALLENGE AND COMPETITION SYSTEM");
-                System.out.println("menu\n\n Register  username lastname firstname emailAddress date_of_birth  school_registration_number image _file.png\n\n viewChallenges -displays the challenges \n\n attempt challenge challenge number \n\n view applicants\n\n confirm yes/no username\n log in");
+                System.out.println("Kindly follow this list of instructions to go ahead\n Register  username lastname firstname emailAddress date_of_birth  school_registration_number image _file.png\n\n viewChallenges -displays the challenges \n\n attempt challenge challenge number \n\n view applicants\n\n confirm yes/no username\n log in");
                 System.out.println("enter command of your choice from the menu\n >>>>");
                 
                 //clearing the spaces in the user input
-                String command = B.readLine().trim();
+                String command = B.readLine();
                 
                 P.println(command);
                 
@@ -43,7 +42,6 @@ public class Client {
     private void executeInput(String command) throws IOException {
       
         String part[]=command.split("");
-        String menuitem=part[0].toLowerCase();
         //processing the commands
 
     if (command.startsWith("register")) {
@@ -52,10 +50,8 @@ public class Client {
         } else {
             String response = sendMessage(command);
             System.out.println(response); 
-             register(part);
-
+             
         }
-       
     }else if(command.startsWith("login")){
         if (part.length == 3) {
             login(part[1], part[2]);
@@ -103,19 +99,21 @@ public class Client {
 
     //receiving questions from the server that was connected to the database
     private void attemptChallenges(String challengeNumber) throws IOException {
-        String response = sendMessage("ATTEMPT_CHALLENGE " + challengeNumber);
+        String command = "ATTEMPT_CHALLENGE " + challengeNumber;
+        String response=sendMessage(command);
         System.out.println(response);
     
-        String prompt = Br.readLine();
+        String prompt = Br.readLine();//read from the server
         System.out.println(prompt);
     
         System.out.println("Press Enter to start the challenge...");
-        B.readLine();
+        B.readLine();// waiting for user input
+        //send the start command to the server
         P.println("start");
         P.flush();
-    
-        while (true) {
-            String line = Br.readLine();
+        //reading challenge response from the server
+        String line ;
+        while((line=Br.readLine())!=null){
             if (line == null || line.equals("END_OF_CHALLENGE")) {
                 break;
             }
@@ -133,7 +131,7 @@ public class Client {
                 break;
             }
         }
-    
+        //read the final result from the server
         String result = Br.readLine();
         System.out.println(result);
     }
