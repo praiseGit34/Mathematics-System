@@ -63,7 +63,7 @@ public class Server {
     private static class ClientHandler extends Thread{
     private final Socket soc;
     private final Connection con;
-    private PrintWriter out;
+    private static PrintWriter out;
     private BufferedReader reader;
     
     //Constructor for initializing ClientHandler with socket and database connection
@@ -83,7 +83,7 @@ public class Server {
             while ((inputLine = reader.readLine()) != null) {
                 System.out.println("Received from client: " + inputLine);
                 String response = processRequest(inputLine);
-                sendMessage(response); // Sending the response back to the client
+                out.println(response); // Sending the response back to the client
                 out.flush(); // Ensure all data is flushed and sent
             }
         } catch (IOException | SQLException e) {
@@ -150,37 +150,33 @@ public class Server {
 
     //method to handle the registration command
     private String registerUser(String[] part) throws SQLException {
-       
-        String dateOfBirth = part[4].trim();
+        if (part.length <8) {
+            sendMessage("Invalid registration format please. Use: Register username first_name last_name email date_of_birth school_registration_number image_file.png");
+            return "register correctly";}
+        String dateOfBirth = part[5].replace('/', '-');
         // validate date format yyyy-mm-dd 
         if (!dateOfBirth.matches("\\d{4}/\\d{2}/\\d{2}")) {
         System.out.println("Invalid date format.");
         }
-        //replace a hash with a hyphen
-        dateOfBirth = dateOfBirth.replace('/', '-');
         //check if the school registration number exists
         String checkQuery = "SELECT * FROM schools WHERE registration_number = ?";
         PreparedStatement st = con.prepareStatement(checkQuery);
-        st.setString(1, part[5].trim());
+        st.setString(1, part[6].trim());
         ResultSet rs = st.executeQuery();
         if (!rs.next()) {    
         return "School registration number not found";
-        }
-        if (part.length != 8) {
-            sendMessage("Invalid registration format. Use: Register username first_name last_name email date_of_birth school_registration_number image_file.png");
-            return "register correctly";
         }
     
         //insert registration data into MySQL database
         String query = "INSERT INTO users (userName, firstname, lastname, emailAddress, date_of_birth, school_registration_number, image_file) VALUES (?, ?, ?, ?, ?, ?, ?)";
         PreparedStatement stmt = con.prepareStatement(query);
-        stmt.setString(1, part[1].trim());
-        stmt.setString(2, part[2].trim());
-        stmt.setString(3, part[3].trim());
-        stmt.setString(4, part[4].trim());
-        stmt.setString(5, part[5].trim());
-        stmt.setString(6, part[6].trim());
-        stmt.setString(7, part[7].trim());
+        stmt.setString(1, part[1]);
+        stmt.setString(2, part[2]);
+        stmt.setString(3, part[3]);
+        stmt.setString(4, part[4]);
+        stmt.setString(5, dateOfBirth);
+        stmt.setString(6, part[6]);
+        stmt.setString(7, part[7]);
         int rowsAffected = stmt.executeUpdate();
         //writing the registration information for participants whose registration number exist in the database 
         // try (FileWriter writer = new FileWriter("registered_participants.txt", true)) {
@@ -190,15 +186,15 @@ public class Server {
         // }
     
         if (rowsAffected > 0) {
-            sendMessage("Registration successful for " + part[1]);
+            //sendMessage("Registration successful for " + part[1]);
+            return "Registration successful for " + part[1];
         } else {
-            sendMessage("Registration failed.");
-        }
-        return query;
-        }
+            //sendMessage("Registration failed.");
+            return "Registration failed.";
+        }}
 
        // Sending response to the client
-    private void sendMessage(String message) {
+    private static void sendMessage(String message) {
         out.println(message);
         out.flush(); // Ensure all data is flushed and sent
     }}
