@@ -19,14 +19,11 @@ public class Client {
         try{
             while(true){
                 System.out.println("WELCOME TO THE MATHEMATICS CHALLENGE AND COMPETITION SYSTEM");
-                System.out.println("Kindly follow this list of instructions to go ahead\n Register  username lastname firstname emailAddress date_of_birth  school_registration_number image _file.png\n\n viewChallenges -displays the challenges \n\n attempt challenge challenge number \n\n view applicants\n\n confirm yes/no username\n log in");
-                System.out.println("enter command of your choice from the menu\n >>>>");
-                
+                System.out.println("Kindly follow this list of instructions to go ahead\n\n Register  username lastname firstname emailAddress date_of_birth  school_registration_number image _file.png\n viewChallenges -displays the challenges \n attempt challenge challenge number \n view applicants\nconfirm yes/no username\n log in\nlog out");
+                System.out.println("enter command of your choice from the menu\n ");
                 //clearing the spaces in the user input
-                String command = B.readLine();
-                
+                String command = B.readLine().trim();
                 P.println(command);
-                
                 if (command.equalsIgnoreCase("exit")) {
                     break;
                 }
@@ -37,54 +34,44 @@ public class Client {
             }
             }
 
-
-        //the method that processes commands entered by the user
+    //the method that processes commands entered by the user
     private void executeInput(String command) throws IOException {
       
-        String part[]=command.split("");
+        String part[]=command.split(" ");
         //processing the commands
-
     if (command.startsWith("register")) {
-        if (part.length != 8) {
+        if (part.length <7) {
             System.out.println("Invalid registration format. Use: Register username firstname lastname emailAddress date_of_birth school_registration_number image_file.png");
         } else {
-            String response = sendMessage(command);
-            System.out.println(response); 
-             
+            register(part); 
         }
     }else if(command.startsWith("login")){
         if (part.length == 3) {
             login(part[1], part[2]);
-            String response = sendMessage(command);
-            System.out.println(response);
         } else if (part.length == 2 && part[1].contains("@")) {
             loginSchoolRepresentative(part[1]);
-            String response = sendMessage(command);
-            System.out.println(response);
         } else
             System.out.println("Invalid login format. Use: login username password (for regular users) or login email@school.com (for school representatives)");
             logout();
     }else if(command.startsWith("view challenges")){
             viewChallenges();
-            String response = sendMessage(command);
-            System.out.println(response);
     }else if(command.startsWith("attemptChallenges")){
-        String response = sendMessage(command);
-        System.out.println(response);
+        if (part.length == 2) {
         attemptChallenges(part[1]);
-    }else if(command.startsWith("confirm")){
+    }else {
+        System.out.println("Invalid format. Use: attemptChallenges challenge_number");
+    }}else if(command.startsWith("confirm")){
         if (part.length != 3 || (!part[1].equals("yes") && !part[1].equals("no"))) {
-            System.out.println("Invalid format. Use: confirm yes/no username");
-        } else {
-            String response = sendMessage(command);
-            System.out.println(response);
             confirmApplicant(part[1], part[2]);
+        } else {
+            System.out.println("Invalid format. Use: confirm yes/no username");     
         }
      }else if(command.startsWith("view applicants")){
         viewApplicants();
+     }else{
+        System.out.println("command not recongnised");
      }
     }
-    
     //receiving view applicants response from the server
     private void viewApplicants() throws IOException {
         String response = sendMessage("VIEW_APPLICANTS");
@@ -93,14 +80,26 @@ public class Client {
 
     //receiving the confirm applicants request from the server
     private void confirmApplicant(String decision, String username) throws IOException {
-        String response = sendMessage("CONFIRM_APPLICANT " + decision + " " + username);
+        String response = receiveMessage();
         System.out.println(response);
         }
 
+    public String receiveMessage() throws IOException {
+        StringBuilder responseBuilder = new StringBuilder();
+        String line;
+        while ((line = Br.readLine()) != null) {
+            if (line.isEmpty()) {
+                break;
+        }
+        responseBuilder.append(line).append("\n");
+        }
+        return responseBuilder.toString();
+        }
+    
     //receiving questions from the server that was connected to the database
     private void attemptChallenges(String challengeNumber) throws IOException {
-        String command = "ATTEMPT_CHALLENGE " + challengeNumber;
-        String response=sendMessage(command);
+       // String command = "ATTEMPT_CHALLENGE " + challengeNumber;
+        String response=receiveMessage();
         System.out.println(response);
     
         String prompt = Br.readLine();//read from the server
@@ -138,7 +137,7 @@ public class Client {
 
     //retrieves challenges from the server
     private void viewChallenges() throws IOException {
-        String response = sendMessage("VIEW_CHALLENGES");
+        String response = receiveMessage();
         if (response.startsWith("No challenges") || response.startsWith("Error")) {
             System.out.println(response);
         } else {
@@ -155,48 +154,36 @@ public class Client {
 
     //log in of the rep by providing an email address
     private void loginSchoolRepresentative(String email) throws IOException {
-        String response = sendMessage("LOGIN " + email);
+        String response = receiveMessage();
         System.out.println(response);
         if (response.contains("password was generated")) {
             System.out.print(" enter the password sent to your email: ");
-            String password = B.readLine();
+            String password = B.readLine().trim();
             response = sendMessage("LOGIN " + email + " " + password);
             System.out.println(response);
         } }
 
     //log in method    
     private void login(String username, String password) throws IOException {
-        String response = sendMessage("LOGIN " + username + " " + password);
+        String response = receiveMessage();
         System.out.println(response);
          }
     //register method
-    private void register(String[] a) throws IOException {
-        String message = String.join(" ",a);
-        String response = sendMessage("REGISTER " + message);
+    private void register(String[] parts) throws IOException {
+        String response = sendMessage("REGISTER " + String.join(" ", parts));
         System.out.println(response);
-     }
-
-     public String sendMessage(String msg) throws IOException {
-        P.println(msg);
-        StringBuilder responseBuilder = new StringBuilder();
-        String line;
-        while ((line = Br.readLine()) != null) {
-            if (line.isEmpty()) {
-                break;
-            }
-            responseBuilder.append(line).append("\n");
-        }
-        return responseBuilder.toString();
     }
-    
+
+    public String sendMessage(String msg) throws IOException {
+        P.println(msg);
+        return receiveMessage();
+    }
     public void stopConnection() throws IOException {
         P.close();
         B.close();
         soc.close();
         Br.close();
         }
-    
-    
     public static void main(String[] args) {
         Client c=new Client();
         try{
