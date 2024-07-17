@@ -14,7 +14,7 @@ import javax.mail.internet.*;
 public class Clienthandler extends Thread{
     private final Socket soc;
     private Map<String, Object>[] totalQuestions;
-    private final static Connection con;
+    private final  Connection con;
     private static PrintWriter out;
     private static int participantID;
     private static boolean isSchoolRepresentative;
@@ -53,7 +53,7 @@ public class Clienthandler extends Thread{
         }
     }
 
-    private String processRequest(String request) throws SQLException {
+    private Object processRequest(String request) throws SQLException {
         String[] part = request.split(" ");
         String action = part[0].toUpperCase();
 
